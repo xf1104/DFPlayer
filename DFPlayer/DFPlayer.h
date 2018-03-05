@@ -3,8 +3,10 @@
 //  DFPlayer
 //
 //  Created by HDF on 2017/7/18.
+//  Modified by XF1104 on 2018/3/5.
 //  Copyright © 2017年 HDF. All rights reserved.
 //
+//  当前版本 1.0.4.0.1
 
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
@@ -81,14 +83,14 @@ typedef NS_ENUM(NSUInteger, DFPlayerStatusCode) {
 @optional
 /**
  代理1：音频将要加入播放队列
-
+ 
  @param player DFPlayer音频播放管理器
  */
 - (void)df_playerAudioWillAddToPlayQueue:(DFPlayer *)player;
 
 /**
  代理2：准备播放
-
+ 
  @param player DFPlayer音频播放管理器
  */
 
@@ -127,7 +129,7 @@ typedef NS_ENUM(NSUInteger, DFPlayerStatusCode) {
 
 /**
  代理6：播放状态码代理
-
+ 
  @param player DFPlayer音频播放管理器
  @param statusCode 状态码
  */
@@ -136,7 +138,7 @@ typedef NS_ENUM(NSUInteger, DFPlayerStatusCode) {
 /**
  代理7：播放器被系统打断代理
  （DFPlayer默认被系统打断暂停播放，打断结束检测能够播放则恢复播放，如果实现此代理，打断逻辑由您处理）
-
+ 
  @param player DFPlayer音频播放管理器
  @param isInterrupted YES:被系统打断开始  NO:被系统打断结束
  */
@@ -144,7 +146,7 @@ typedef NS_ENUM(NSUInteger, DFPlayerStatusCode) {
 
 /**
  代理8：监听耳机插入拔出代理
-
+ 
  @param player DFPlayer音频播放管理器
  @param isHeadphone YES:插入 NO:拔出
  */
@@ -269,14 +271,14 @@ typedef NS_ENUM(NSUInteger, DFPlayerStatusCode) {
 /**
  设置历史播放信息
  （在合适的时机，调用该方法，将会在本地记录音频URL、当前播放到的时间、音频总时长、播放进度，以供下次继续播放）
-
+ 
  @return 是否保存成功
  */
 - (BOOL)df_setPreviousAudioModel;
 
 /**
  用历史播放信息配置播放器(数据源中要有该条音频的URL才能配置哦)
-
+ 
  @return 是否配置成功
  */
 - (BOOL)df_setPlayerWithPreviousAudioModel;
@@ -298,9 +300,9 @@ typedef NS_ENUM(NSUInteger, DFPlayerStatusCode) {
  */
 + (NSString *)df_playerCheckIsCachedWithAudioUrl:(NSURL *)url;
 
- /**
+/**
  清除url对应的本地缓存
-
+ 
  @param url 网络音频url
  @param block 是否清除成功 错误信息
  */
@@ -309,7 +311,7 @@ typedef NS_ENUM(NSUInteger, DFPlayerStatusCode) {
 
 /**
  清除DFPlayer产生的缓存
-
+ 
  @param isClearCurrentUser YES:清除当前用户缓存  NO:清除所有用户缓存
  @param block 是否清除成功 错误信息
  */
@@ -326,13 +328,9 @@ typedef NS_ENUM(NSUInteger, DFPlayerStatusCode) {
 
 /**
  计算系统磁盘空间 剩余可用空间
-
+ 
  @param block totalSize:总空间 freeSize:剩余空间
  */
 + (void)df_countSystemSizeBlock:(void(^)(CGFloat totalSize,CGFloat freeSize))block;
 
 @end
-
-
-
-

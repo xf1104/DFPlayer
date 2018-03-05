@@ -3,8 +3,10 @@
 //  DFPlayer
 //
 //  Created by HDF on 2017/7/18.
+//  Modified by XF1104 on 2018/3/5.
 //  Copyright © 2017年 HDF. All rights reserved.
 //
+//  当前版本 1.0.4.0.1
 
 #import "DFPlayer.h"
 #import "DFPlayerFileManager.h"
@@ -96,7 +98,7 @@ NSString * const DFPlaybackLikelyToKeepUpKey    = @"playbackLikelyToKeepUp";
 - (void)df_initPlayerWithUserId:(NSString *)userId{
     //记录用户
     [self initPlayerCachePathWithUserId:userId];
-
+    
     [[AVAudioSession sharedInstance] setActive:YES error:nil];
     [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategorySoloAmbient error:nil];
     
@@ -152,7 +154,7 @@ NSString * const DFPlaybackLikelyToKeepUpKey    = @"playbackLikelyToKeepUp";
     //监测其他app是否占据AudioSession
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(df_playerSecondaryAudioHint:) name:AVAudioSessionSilenceSecondaryAudioHintNotification object:nil];
     //播放
-     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(audioPrePlayToLoadPreviousAudio) name:DFPlayerCurrentAudioInfoModelPlayNotiKey object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(audioPrePlayToLoadPreviousAudio) name:DFPlayerCurrentAudioInfoModelPlayNotiKey object:nil];
 }
 - (void)df_playerDidEnterForeground{self.isBackground = NO;}
 - (void)df_playerWillResignActive{self.isBackground = YES;}
@@ -230,9 +232,9 @@ NSString * const DFPlaybackLikelyToKeepUpKey    = @"playbackLikelyToKeepUp";
     if (self.currentAudioModel) {
         BOOL isSuccess =
         [DFPlayerArchiverManager df_archiveInfoModelWithAudioUrl:self.currentAudioModel.audioUrl
-                                                    currentTime:self.currentTime
-                                                      totalTime:self.totalTime
-                                                       progress:self.progress];
+                                                     currentTime:self.currentTime
+                                                       totalTime:self.totalTime
+                                                        progress:self.progress];
         if (isSuccess) {
             NSLog(@"-- DFPlayer： 播放信息保存完成");
             return YES;
@@ -341,7 +343,7 @@ NSString * const DFPlaybackLikelyToKeepUpKey    = @"playbackLikelyToKeepUp";
         dispatch_group_async(self.dataGroupQueue, self.HighGlobalQueue, ^{
             dispatch_async(self.HighGlobalQueue, ^{
                 [self.playerModelArray addObjectsFromArray:[self.dataSource df_playerModelArray]];
-
+                
                 //更新数据时更新audioId
                 if (self.currentAudioModel.audioUrl) {
                     [self.playerModelArray enumerateObjectsWithOptions:(NSEnumerationConcurrent) usingBlock:^(DFPlayerModel * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
@@ -409,7 +411,7 @@ NSString * const DFPlaybackLikelyToKeepUpKey    = @"playbackLikelyToKeepUp";
     self.progress = self.bufferProgress = self.currentTime = self.totalTime = .0f;
     self.isSeekWaiting  = NO;
     self.isSettingPreviousAudioModel = NO;
-
+    
     [self audioPrePlayToResetAudio];
     [self audioPrePlayToLoadAudio];
 }
@@ -575,9 +577,13 @@ NSString * const DFPlaybackLikelyToKeepUpKey    = @"playbackLikelyToKeepUp";
                     }
                     break;
                 case AVPlayerItemStatusFailed://准备失败.
+                {
                     self.state = DFPlayerStateFailed;
                     self.isSettingPreviousAudioModel = NO;
+                    NSError *error = self.playerItem.error;
+                    NSLog(@"%@",error);
                     [self df_playerStatusWithStatusCode:DFPlayerStatus_PlayError];
+                }
                     break;
                 default:
                     break;
@@ -777,21 +783,113 @@ NSString * const DFPlaybackLikelyToKeepUpKey    = @"playbackLikelyToKeepUp";
         case DFPlayerModeSingleCycle:
             /**解释：单曲循环模式下，如果是自动播放结束，则单曲循环。
              如果手动控制播放下一首或上一首，则根据isManualToPlay的设置判断播放下一首还是重新播放*/
-            if (self.isNaturalToEndTime) {
+            if (self.isNaturalToEndTime)
+            {
                 self.isNaturalToEndTime = NO;
                 [self audioPrePlay];
-            }else{
-                if (self.isManualToPlay) {
+            }
+            else
+            {
+                if (self.isManualToPlay)
+                {
+                    //此处进行离线模式播放处理
+                    if (self.tool.networkStatus == DFPlayerNetworkStatusUnknown || self.tool.networkStatus == DFPlayerNetworkStatusNotReachable)
+                    {
+                        NSUInteger arrCount = self.playerModelArray.count;
+                        NSUInteger tmpFlag = self.currentAudioTag == arrCount-1 ? 0 : self.currentAudioTag+1;
+                        
+                        while (tmpFlag != self.currentAudioTag)
+                        {
+                            DFPlayerModel *m = self.playerModelArray[tmpFlag];
+                            NSString *urlStr = [DFPlayer df_playerCheckIsCachedWithAudioUrl:m.audioUrl];
+                            
+                            if ([DFPlayerTool isLocalWithUrlString:m.audioUrl.absoluteString] || urlStr != nil)
+                            {
+                                self.currentAudioTag = tmpFlag == 0 ? arrCount-1 : tmpFlag - 1;
+                                [self audioNextOrderCycle];
+                                NSLog(@"在单曲循环模式下，点击下一首，找到处理后的audioId：%ld",self.currentAudioTag);
+                                return;
+                            }
+                            tmpFlag++;
+                            if (tmpFlag == arrCount)
+                            {
+                                tmpFlag = 0;
+                            }
+                        }
+                        
+                        NSLog(@"在单曲循环模式下，点击下一首，没有找到处理后的audioId：%ld",self.currentAudioTag);
+                        break;
+                    }
+                    
                     [self audioNextOrderCycle];
-                }else{
+                }
+                else
+                {
                     [self audioPrePlay];
                 }
             }
             break;
         case DFPlayerModeOrderCycle:
+            //此处进行离线模式播放处理
+            if (self.tool.networkStatus == DFPlayerNetworkStatusUnknown || self.tool.networkStatus == DFPlayerNetworkStatusNotReachable)
+            {
+                NSUInteger arrCount = self.playerModelArray.count;
+                NSUInteger tmpFlag = self.currentAudioTag == arrCount-1 ? 0 : self.currentAudioTag+1;
+                
+                while (tmpFlag != self.currentAudioTag)
+                {
+                    DFPlayerModel *m = self.playerModelArray[tmpFlag];
+                    NSString *urlStr = [DFPlayer df_playerCheckIsCachedWithAudioUrl:m.audioUrl];
+                    
+                    if ([DFPlayerTool isLocalWithUrlString:m.audioUrl.absoluteString] || urlStr != nil)
+                    {
+                        self.currentAudioTag = tmpFlag == 0 ? arrCount-1 : tmpFlag - 1;
+                        [self audioNextOrderCycle];
+                        NSLog(@"在列表循环模式下，点击下一首，找到处理后的audioId：%ld",self.currentAudioTag);
+                        return;
+                    }
+                    tmpFlag++;
+                    if (tmpFlag == arrCount)
+                    {
+                        tmpFlag = 0;
+                    }
+                }
+                
+                NSLog(@"在列表循环模式下，点击下一首，没有找到处理后的audioId：%ld",self.currentAudioTag);
+                break;
+            }
             [self audioNextOrderCycle];
             break;
-        case DFPlayerModeShuffleCycle:{
+        case DFPlayerModeShuffleCycle:
+        {
+            if (self.tool.networkStatus == DFPlayerNetworkStatusUnknown || self.tool.networkStatus == DFPlayerNetworkStatusNotReachable)
+            {
+                NSUInteger arrCount = self.playerModelArray.count;
+                NSUInteger tmpFlag = self.currentAudioTag == arrCount-1 ? 0 : self.currentAudioTag+1;
+                
+                while (tmpFlag != self.currentAudioTag)
+                {
+                    DFPlayerModel *m = self.playerModelArray[tmpFlag];
+                    NSString *urlStr = [DFPlayer df_playerCheckIsCachedWithAudioUrl:m.audioUrl];
+                    
+                    if ([DFPlayerTool isLocalWithUrlString:m.audioUrl.absoluteString] || urlStr != nil)
+                    {
+                        self.currentAudioTag = tmpFlag == 0 ? arrCount-1 : tmpFlag - 1;
+                        [self audioNextOrderCycle];
+                        NSLog(@"在随机模式下，点击下一首，找到处理后的audioId：%ld",self.currentAudioTag);
+                        return;
+                    }
+                    tmpFlag++;
+                    if (tmpFlag == arrCount)
+                    {
+                        tmpFlag = 0;
+                    }
+                }
+                
+                NSLog(@"在随机模式下，点击下一首，没有找到处理后的audioId：%ld",self.currentAudioTag);
+                break;
+            }
+            
             self.playIndex2++;
             NSInteger tag = [self audioNextShuffleCycleIndex];
             //去重 避免随机到当前正在播放的音频
@@ -819,28 +917,122 @@ NSString * const DFPlaybackLikelyToKeepUpKey    = @"playbackLikelyToKeepUp";
             }
             break;
         case DFPlayerModeSingleCycle:
-            if (self.isManualToPlay) {
+            if (self.isManualToPlay)
+            {
+                //此处进行离线模式播放处理
+                if (self.tool.networkStatus == DFPlayerNetworkStatusUnknown || self.tool.networkStatus == DFPlayerNetworkStatusNotReachable)
+                {
+                    NSUInteger arrCount = self.playerModelArray.count;
+                    NSUInteger tmpFlag = self.currentAudioTag == 0 ? arrCount-1 : self.currentAudioTag-1;
+                    
+                    while (tmpFlag != self.currentAudioTag)
+                    {
+                        DFPlayerModel *m = self.playerModelArray[tmpFlag];
+                        NSString *urlStr = [DFPlayer df_playerCheckIsCachedWithAudioUrl:m.audioUrl];
+                        
+                        if ([DFPlayerTool isLocalWithUrlString:m.audioUrl.absoluteString] || urlStr != nil)
+                        {
+                            self.currentAudioTag = tmpFlag == 0 ? arrCount-1 : tmpFlag + 1;
+                            [self audioLastOrderCycle];
+                            NSLog(@"在单曲循环模式下，点击上一首，找到处理后的audioId：%ld",self.currentAudioTag);
+                            return;
+                        }
+                        tmpFlag--;
+                        if (tmpFlag == 0)
+                        {
+                            tmpFlag = arrCount - 1;
+                        }
+                    }
+                    
+                    NSLog(@"在单曲循环模式下，点击上一首，没有找到处理后的audioId：%ld",self.currentAudioTag);
+                    break;
+                }
+                
                 [self audioLastOrderCycle];
-            }else{
+            }
+            else
+            {
                 [self audioPrePlay];
             }
             break;
         case DFPlayerModeOrderCycle:
+            //此处进行离线模式播放处理
+            if (self.tool.networkStatus == DFPlayerNetworkStatusUnknown || self.tool.networkStatus == DFPlayerNetworkStatusNotReachable)
+            {
+                NSUInteger arrCount = self.playerModelArray.count;
+                NSUInteger tmpFlag = self.currentAudioTag == 0 ? arrCount-1 : self.currentAudioTag-1;
+                
+                while (tmpFlag != self.currentAudioTag)
+                {
+                    DFPlayerModel *m = self.playerModelArray[tmpFlag];
+                    NSString *urlStr = [DFPlayer df_playerCheckIsCachedWithAudioUrl:m.audioUrl];
+                    
+                    if ([DFPlayerTool isLocalWithUrlString:m.audioUrl.absoluteString] || urlStr != nil)
+                    {
+                        self.currentAudioTag = tmpFlag == 0 ? arrCount-1 : tmpFlag + 1;
+                        [self audioLastOrderCycle];
+                        NSLog(@"在列表模式下，点击上一首，找到处理后的audioId：%ld",self.currentAudioTag);
+                        return;
+                    }
+                    tmpFlag--;
+                    if (tmpFlag == 0)
+                    {
+                        tmpFlag = arrCount - 1;
+                    }
+                }
+                
+                NSLog(@"在列表循环模式下，点击上一首，没有找到处理后的audioId：%ld",self.currentAudioTag);
+                break;
+            }
             [self audioLastOrderCycle];
             break;
-        case DFPlayerModeShuffleCycle:{
-            if (self.playIndex2 == 1) {
+        case DFPlayerModeShuffleCycle:
+        {
+            if (self.playIndex2 == 1)
+            {
                 self.playIndex2 = 0;
                 self.currentAudioModel = self.playerModelArray[self.playIndex1];
-            }else{
+            }
+            else
+            {
+                //此处进行离线模式播放处理
+                if (self.tool.networkStatus == DFPlayerNetworkStatusUnknown || self.tool.networkStatus == DFPlayerNetworkStatusNotReachable)
+                {
+                    NSUInteger arrCount = self.playerModelArray.count;
+                    NSUInteger tmpFlag = self.currentAudioTag == 0 ? arrCount-1 : self.currentAudioTag-1;
+                    
+                    while (tmpFlag != self.currentAudioTag)
+                    {
+                        DFPlayerModel *m = self.playerModelArray[tmpFlag];
+                        NSString *urlStr = [DFPlayer df_playerCheckIsCachedWithAudioUrl:m.audioUrl];
+                        
+                        if ([DFPlayerTool isLocalWithUrlString:m.audioUrl.absoluteString] || urlStr != nil)
+                        {
+                            self.currentAudioTag = tmpFlag == 0 ? arrCount-1 : tmpFlag + 1;
+                            [self audioLastOrderCycle];
+                            NSLog(@"在随机模式下，点击上一首，找到处理后的audioId：%ld",self.currentAudioTag);
+                            return;
+                        }
+                        tmpFlag--;
+                        if (tmpFlag == 0)
+                        {
+                            tmpFlag = arrCount - 1;
+                        }
+                    }
+                    
+                    NSLog(@"在随机模式下，点击上一首，没有找到处理后的audioId：%ld",self.currentAudioTag);
+                    break;
+                }
                 NSInteger tag = [self audioLastShuffleCycleIndex];
                 //去重 避免随机到当前正在播放的音频
-                if (tag == self.currentAudioTag) {
+                if (tag == self.currentAudioTag)
+                {
                     tag = [self audioLastShuffleCycleIndex];
                 }
                 self.currentAudioTag = tag;
                 self.currentAudioModel = self.playerModelArray[self.currentAudioTag];
             }
+            
             [self audioPrePlay];
             break;
         }
@@ -955,9 +1147,9 @@ NSString * const DFPlaybackLikelyToKeepUpKey    = @"playbackLikelyToKeepUp";
         case DFPlayerAudioSessionCategoryPlayback:
             [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback error:nil];
             break;
-//        case DFPlayerAudioSessionCategoryRecord:
-//            [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryRecord error:nil];
-//            break;
+            //        case DFPlayerAudioSessionCategoryRecord:
+            //            [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryRecord error:nil];
+            //            break;
         case DFPlayerAudioSessionCategoryPlayAndRecord:
             [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategorySoloAmbient error:nil];
             break;
@@ -1047,6 +1239,3 @@ NSString * const DFPlaybackLikelyToKeepUpKey    = @"playbackLikelyToKeepUp";
 }
 
 @end
-
-
-
